@@ -118,7 +118,6 @@ async function createInjectedTempfile(file) {
 }
 
 async function upload(source, destination, hash) {
-  console.log('uploading ', destination, '       from', source)
   const destinationHash = destination + '.hash'
 
   const mimetype = mime.lookup(source) || 'application/octet-stream'
@@ -129,21 +128,21 @@ async function upload(source, destination, hash) {
   ])
 
   await Promise.all([
-    cmd(`
+    retrycmd(`
       gsutil setmeta \
         -h "Cache-Control: public, max-age=31536000" \
         -h "Content-Encoding: gzip" \
         -h "Content-Type: ${mimetype}" \
         "${destination}" 
     `),
-    cmd(`
+    retrycmd(`
       gsutil setmeta \
         -h "Cache-Control: public, max-age=31536000" \
         -h "Content-Type: text/plain" \
         "${destinationHash}" 
     `),
-    cmd(`gsutil acl ch -u AllUsers:R "${destination}"`),
-    cmd(`gsutil acl ch -u AllUsers:R "${destinationHash}"`),
+    retrycmd(`gsutil acl ch -u AllUsers:R "${destination}"`),
+    retrycmd(`gsutil acl ch -u AllUsers:R "${destinationHash}"`),
   ])
 }
 
@@ -178,22 +177,57 @@ function getFileHash(file) {
   return cmd(`git rev-parse --short=1 $(git rev-list -1 master -- "./${file}")`)
 }
 
-function cmd(str, nocwd = false) {
-  const opts = {}
-
-  if (!nocwd) {
-    opts.cwd = basePath
+async function retrycmd(...args) {
+  while (true) {
+    try {
+      return await cmd(...args)
+    } catch (e) {
+      console.error(
+        `There was an error, but we will try again in a while: ${e.message}`
+      )
+    }
   }
+}
 
-  return new Promise((res, reject) => {
-    exec(str, opts, (error, stdout, stderr) => {
-      if (error) {
-        reject(stderr.trim())
-      } else {
-        res(stdout.trim())
-      }
-    })
+let workers = 0
+const queue = []
+async function cmd(str, nocwd = false) {
+  await new Promise(res => {
+    queue.push(res)
   })
+
+  try {
+    workers += 1
+
+    const opts = {}
+
+    if (!nocwd) {
+      opts.cwd = basePath
+    }
+
+    return await new Promise((res, reject) => {
+      let printstr = str.trim()
+      while (printstr.indexOf('  ') !== -1) {
+        printstr = printstr.replace(/  /g, ' ')
+      }
+      console.log(printstr)
+
+      exec(str, opts, (error, stdout, stderr) => {
+        if (error) {
+          reject(stderr.trim())
+        } else {
+          res(stdout.trim())
+        }
+      })
+    })
+  } finally {
+    workers -= 1
+  }
+}
+function checkQueue() {
+  if (queue.length > 0 && workers < 40) {
+    queue.shift()()
+  }
 }
 
 function absPath(file) {
@@ -202,6 +236,7 @@ function absPath(file) {
 }
 
 async function start() {
+  setInterval(checkQueue, 5)
   if (existsSync(basePath)) {
     await cmd(`git worktree remove ${basePath}`, true)
   }
@@ -216,6 +251,8 @@ async function start() {
     `git add ${configFile} ; git commit -m 'CDN' ; git push origin cdn:master`
   )
   await cmd(`git worktree remove ${basePath}`, true)
+  clearInterval(checkQueue)
+  process.exit(0)
 }
 
 start()

@@ -1,0 +1,19 @@
+{
+  "name": "cdn-deploy",
+  "version": "1.0.0",
+  "description": "Deploy ES modules to CDN",
+  "main": "index.js",
+  "bin": {
+    "cdn-deploy": "./index.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Mikael Wikman",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "mime-types": "^2.1.26",
+    "tmp": "^0.1.0"
+  }
+}

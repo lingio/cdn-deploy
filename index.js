@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import {writeFileSync, readFileSync, realpathSync, existsSync} from 'fs'
 import {exec} from 'child_process'
 import tmp from 'tmp'

@@ -5,8 +5,8 @@ import {exec} from 'child_process'
 import tmp from 'tmp'
 import mime from 'mime-types'
 
-const configFile = 'cdn.json'
-const basePath = '/tmp/cdn'
+const configFile = '/tmp/cdn/cdn.json'
+let basePath = '/tmp/cdn'
 let db
 const seen = {}
 
@@ -21,15 +21,19 @@ const patternDImport = new RegExp(
 const globalImport = new RegExp(/(cdn-import)\((.+)\)/, 'mg')
 
 function loadDb() {
-  const db = JSON.parse(readFileSync(`${basePath}/${configFile}`, 'utf8'))
+  const db = JSON.parse(readFileSync(configFile, 'utf8'))
   if (!db.files) {
     db.files = {}
+  }
+  if (db.base) {
+    basePath =
+      basePath + '/' + db.base.replace(/^[\./]+/, '').replace(/\/+$/, '')
   }
   return db
 }
 
 function saveDb() {
-  writeFileSync(`${basePath}/${configFile}`, JSON.stringify(db, null, 2))
+  writeFileSync(configFile, JSON.stringify(db, null, 2))
 }
 
 function maybeDeploy(file, callTree = []) {
@@ -81,15 +85,18 @@ async function deploy(me, callTree) {
     const destination =
       db.target +
       ('/' + me.slice(2, me.lastIndexOf('/')) + '/' + filename).replace(
-        '//',
+        /\/\//g,
         '/'
       )
     await upload(path, destination, myHash)
+    if (db.targetUrl) {
+      db.files[me].url = destination.replace(/^[a-z]+:\/\/[^\/]+/, db.targetUrl)
+    }
   }
 }
 
 async function createInjectedTempfile(file) {
-  let contents = await readFileSync(file, 'utf8')
+  let contents = await readFileSync(`${basePath}/${file}`, 'utf8')
 
   ;(await getDependencies(file)).forEach(({raw, absolute}) => {
     const version = db.files[file].dependencies[absolute]
@@ -155,7 +162,7 @@ async function getDependencies(file) {
     return getDependencies.cache[file]
   }
 
-  const js = readFileSync(file, 'utf8')
+  const js = readFileSync(`${basePath}/${file}`, 'utf8')
 
   const imports = [
     ...js.matchAll(patternImport),
@@ -174,7 +181,7 @@ async function getDependencies(file) {
 }
 
 function getFileHash(file) {
-  return cmd(`git rev-parse --short=1 $(git rev-list -1 master -- "./${file}")`)
+  return cmd(`git rev-parse --short=1 $(git rev-list -1 master -- "${file}")`)
 }
 
 async function retrycmd(...args) {
@@ -214,7 +221,7 @@ async function cmd(str, nocwd = false) {
 
       exec(str, opts, (error, stdout, stderr) => {
         if (error) {
-          reject(stderr.trim())
+          reject(printstr + ': ' + stderr.trim())
         } else {
           res(stdout.trim())
         }
@@ -236,23 +243,28 @@ function absPath(file) {
 }
 
 async function start() {
-  setInterval(checkQueue, 5)
-  if (existsSync(basePath)) {
-    await cmd(`git worktree remove ${basePath}`, true)
-  }
+  try {
+    setInterval(checkQueue, 5)
+    if (existsSync(basePath)) {
+      await cmd(`git worktree remove /tmp/cdn`, true)
+    }
 
-  await cmd(`git fetch && git push`, true)
-  await cmd(`git worktree add ${basePath}`, true)
-  await cmd(`git reset --hard origin/master`)
-  db = await loadDb()
-  await maybeDeploy(absPath(`${basePath}/${db.entry}`))
-  saveDb()
-  await cmd(
-    `git add ${configFile} ; git commit -m 'CDN' ; git push origin cdn:master`
-  )
-  await cmd(`git worktree remove ${basePath}`, true)
-  clearInterval(checkQueue)
-  process.exit(0)
+    await cmd(`git fetch && git push`, true)
+    await cmd(`git worktree add /tmp/cdn`, true)
+    await cmd(`git reset --hard origin/master`)
+    db = await loadDb()
+    await maybeDeploy(absPath(`${basePath}/${db.entry}`))
+    saveDb()
+    await cmd(
+      `git add ${configFile} ; git commit -m 'CDN' ; git push origin cdn:master`
+    )
+    await cmd(`git worktree remove /tmp/cdn`, true)
+  } catch (e) {
+    console.error(e)
+  } finally {
+    clearInterval(checkQueue)
+    process.exit(0)
+  }
 }
 
 start()

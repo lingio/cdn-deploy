@@ -190,8 +190,9 @@ async function retrycmd(...args) {
       return await cmd(...args)
     } catch (e) {
       console.error(
-        `There was an error, but we will try again in a while: ${e.message}`
+        `++++ gsutil failed as usual, but no worries we retry the call in 100ms`
       )
+      await new Promise(res => setTimeout(res, 100))
     }
   }
 }

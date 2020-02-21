@@ -1,10 +1,17 @@
 #!/usr/bin/env node
 
-import {writeFileSync, readFileSync, realpathSync, existsSync} from 'fs'
+import {
+  appendFileSync,
+  writeFileSync,
+  readFileSync,
+  realpathSync,
+  existsSync,
+} from 'fs'
 import {exec} from 'child_process'
 import tmp from 'tmp'
 import mime from 'mime-types'
 
+const logFile = '/tmp/cdn-deploy.log'
 const configFile = '/tmp/cdn/cdn.json'
 let basePath = '/tmp/cdn'
 let db
@@ -88,9 +95,15 @@ async function deploy(me, callTree) {
         /\/\//g,
         '/'
       )
-    await upload(path, destination, myHash)
+    let url = destination.slice(db.target.length)
     if (db.targetUrl) {
-      db.files[me].url = destination.replace(/^[a-z]+:\/\/[^\/]+/, db.targetUrl)
+      url = destination.replace(/^[a-z]+:\/\/[^\/]+/, db.targetUrl)
+    }
+
+    await upload(path, destination, myHash, url)
+
+    if (db.targetUrl) {
+      db.files[me].url = url
     }
   }
 }
@@ -124,7 +137,7 @@ async function createInjectedTempfile(file) {
   }
 }
 
-async function upload(source, destination, hash) {
+async function upload(source, destination, hash, url) {
   const destinationHash = destination + '.hash'
 
   const mimetype = mime.lookup(source) || 'application/octet-stream'
@@ -133,6 +146,9 @@ async function upload(source, destination, hash) {
     cmd(`cat "${source}" | gzip | gsutil cp - "${destination}"`),
     cmd(`echo "${hash}" | gsutil cp - "${destinationHash}"`),
   ])
+
+  // gsutil keeps failing if we modify an upload too soon
+  await new Promise(res => setTimeout(res, 100))
 
   await Promise.all([
     retrycmd(`
@@ -151,6 +167,8 @@ async function upload(source, destination, hash) {
     retrycmd(`gsutil acl ch -u AllUsers:R "${destination}"`),
     retrycmd(`gsutil acl ch -u AllUsers:R "${destinationHash}"`),
   ])
+
+  console.log(url)
 }
 
 async function getDependencies(file) {
@@ -218,7 +236,7 @@ async function cmd(str, nocwd = false) {
       while (printstr.indexOf('  ') !== -1) {
         printstr = printstr.replace(/  /g, ' ')
       }
-      console.log(printstr)
+      log(printstr)
 
       exec(str, opts, (error, stdout, stderr) => {
         if (error) {
@@ -243,7 +261,12 @@ function absPath(file) {
   return ret
 }
 
+function log(str) {
+  appendFileSync(logFile, str)
+}
+
 async function start() {
+  log('======= NEW DEPLOY: ' + process.cwd())
   try {
     setInterval(checkQueue, 5)
     if (existsSync(basePath)) {

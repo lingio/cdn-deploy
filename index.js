@@ -10,8 +10,6 @@ import {
 import {exec} from 'child_process'
 import tmp from 'tmp'
 import mime from 'mime-types'
-import alluuid from 'uuid'
-const uuid = alluuid.v4
 
 const logFile = '/tmp/cdn-deploy.log'
 const configFile = '/tmp/cdn/cdn.json'
@@ -140,16 +138,13 @@ async function createInjectedTempfile(file) {
   }
 }
 
-async function upload(source, realDestination, hash, url) {
-  // first we upload to a staging area with multiple operations, then copy over to the correct destination
-  const destination = db.target + '/_tmp/' + uuid()
-
+async function upload(source, destination, hash, url) {
   const mimetype = mime.lookup(source) || 'application/octet-stream'
 
   cmd(`cat "${source}" | gzip | gsutil cp - "${destination}"`)
 
   // gsutil returns before it is ready, so give it some time to rest
-  await new Promise(res => setTimeout(res, 300))
+  await new Promise(res => setTimeout(res, 1000))
 
   await retrycmd(`
     gsutil setmeta \
@@ -159,7 +154,6 @@ async function upload(source, realDestination, hash, url) {
       "${destination}" 
   `)
   await retrycmd(`gsutil acl ch -u AllUsers:R "${destination}"`)
-  await retrycmd(`gsutil cp "${destination}" "${realDestination}"`)
 
   console.log(url)
 }

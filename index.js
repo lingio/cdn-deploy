@@ -146,16 +146,20 @@ async function upload(source, realDestination, hash, url) {
 
   const mimetype = mime.lookup(source) || 'application/octet-stream'
 
-  cmd(`cat "${source}" | gzip | gsutil cp - "${destination}"`),
-    await retrycmd(`
+  cmd(`cat "${source}" | gzip | gsutil cp - "${destination}"`)
+
+  // gsutil returns before it is ready, so give it some time to rest
+  await new Promise(res => setTimeout(res, 100))
+
+  await retrycmd(`
     gsutil setmeta \
       -h "Cache-Control: public, max-age=31536000" \
       -h "Content-Encoding: gzip" \
       -h "Content-Type: ${mimetype}" \
       "${destination}" 
   `)
-  await retrycmd(`gsutil acl ch -u AllUsers:R "${destination}"`),
-    await retrycmd(`gsutil cp "${destination}" "${realDestination}"`)
+  await retrycmd(`gsutil acl ch -u AllUsers:R "${destination}"`)
+  await retrycmd(`gsutil cp "${destination}" "${realDestination}"`)
 
   console.log(url)
 }
@@ -197,7 +201,7 @@ async function retrycmd(...args) {
       return await cmd(...args)
     } catch (e) {
       console.error(
-        `++++ gsutil failed as usual, but no worries we retry the call in 100ms`
+        `++++ gsutil failed as usual, but no worries we retry the call in 100ms: ${e.message}`
       )
       await new Promise(res => setTimeout(res, 100))
     }
@@ -251,7 +255,7 @@ function absPath(file) {
 }
 
 function log(str) {
-  appendFileSync(logFile, str)
+  appendFileSync(logFile, str + '\n')
 }
 
 async function start() {

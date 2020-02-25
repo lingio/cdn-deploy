@@ -149,7 +149,7 @@ async function upload(source, realDestination, hash, url) {
   cmd(`cat "${source}" | gzip | gsutil cp - "${destination}"`)
 
   // gsutil returns before it is ready, so give it some time to rest
-  await new Promise(res => setTimeout(res, 100))
+  await new Promise(res => setTimeout(res, 300))
 
   await retrycmd(`
     gsutil setmeta \
@@ -201,7 +201,7 @@ async function retrycmd(...args) {
       return await cmd(...args)
     } catch (e) {
       console.error(
-        `++++ gsutil failed as usual, but no worries we retry the call in 100ms: ${e.message}`
+        `++++ gsutil failed as usual, but no worries we retry the call in 100ms: ${e.message} (${args[0]})`
       )
       await new Promise(res => setTimeout(res, 100))
     }

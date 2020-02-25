@@ -10,7 +10,8 @@ import {
 import {exec} from 'child_process'
 import tmp from 'tmp'
 import mime from 'mime-types'
-import {v4 as uuid} from 'uuid'
+import alluuid from 'uuid'
+const uuid = alluuid.v4
 
 const logFile = '/tmp/cdn-deploy.log'
 const configFile = '/tmp/cdn/cdn.json'

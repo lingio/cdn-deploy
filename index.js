@@ -10,6 +10,7 @@ import {
 import {exec} from 'child_process'
 import tmp from 'tmp'
 import mime from 'mime-types'
+import {v4 as uuid} from 'uuid'
 
 const logFile = '/tmp/cdn-deploy.log'
 const configFile = '/tmp/cdn/cdn.json'
@@ -105,6 +106,7 @@ async function deploy(me, callTree) {
     if (db.targetUrl) {
       db.files[me].url = url
     }
+    saveDb()
   }
 }
 
@@ -137,36 +139,22 @@ async function createInjectedTempfile(file) {
   }
 }
 
-async function upload(source, destination, hash, url) {
-  const destinationHash = destination + '.hash'
+async function upload(source, realDestination, hash, url) {
+  // first we upload to a staging area with multiple operations, then copy over to the correct destination
+  const destination = db.target + '/_tmp/' + uuid()
 
   const mimetype = mime.lookup(source) || 'application/octet-stream'
 
-  await Promise.all([
-    cmd(`cat "${source}" | gzip | gsutil cp - "${destination}"`),
-    cmd(`echo "${hash}" | gsutil cp - "${destinationHash}"`),
-  ])
-
-  // gsutil keeps failing if we modify an upload too soon
-  await new Promise(res => setTimeout(res, 100))
-
-  await Promise.all([
-    retrycmd(`
-      gsutil setmeta \
-        -h "Cache-Control: public, max-age=31536000" \
-        -h "Content-Encoding: gzip" \
-        -h "Content-Type: ${mimetype}" \
-        "${destination}" 
-    `),
-    retrycmd(`
-      gsutil setmeta \
-        -h "Cache-Control: public, max-age=31536000" \
-        -h "Content-Type: text/plain" \
-        "${destinationHash}" 
-    `),
-    retrycmd(`gsutil acl ch -u AllUsers:R "${destination}"`),
-    retrycmd(`gsutil acl ch -u AllUsers:R "${destinationHash}"`),
-  ])
+  cmd(`cat "${source}" | gzip | gsutil cp - "${destination}"`),
+    await retrycmd(`
+    gsutil setmeta \
+      -h "Cache-Control: public, max-age=31536000" \
+      -h "Content-Encoding: gzip" \
+      -h "Content-Type: ${mimetype}" \
+      "${destination}" 
+  `)
+  await retrycmd(`gsutil acl ch -u AllUsers:R "${destination}"`),
+    await retrycmd(`gsutil cp "${destination}" "${realDestination}"`)
 
   console.log(url)
 }

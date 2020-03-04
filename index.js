@@ -44,10 +44,6 @@ function saveDb() {
 }
 
 function maybeDeploy(file, callTree = []) {
-  if (seen[file]) {
-    return seen[file]
-  }
-
   if (callTree.includes(file)) {
     throw new Error(
       'Circular dependency detected, which this script has no support for! ' +
@@ -55,6 +51,10 @@ function maybeDeploy(file, callTree = []) {
         ' detected in adding ' +
         file
     )
+  }
+
+  if (seen[file]) {
+    return seen[file]
   }
 
   return (seen[file] = deploy(file, [...callTree, file]))
@@ -141,10 +141,10 @@ async function createInjectedTempfile(file) {
 async function upload(source, destination, hash, url) {
   const mimetype = mime.lookup(source) || 'application/octet-stream'
 
-  cmd(`cat "${source}" | gzip | gsutil cp - "${destination}"`)
+  await cmd(`cat "${source}" | gzip | gsutil cp - "${destination}"`)
 
   // gsutil returns before it is ready, so give it some time to rest
-  await new Promise(res => setTimeout(res, 1000))
+  await new Promise(res => setTimeout(res, 10))
 
   await retrycmd(`
     gsutil setmeta \

@@ -1,6 +1,6 @@
 {
   "name": "cdn-deploy",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "Deploy ES modules to CDN",
   "main": "index.js",
   "bin": {

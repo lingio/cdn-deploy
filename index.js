@@ -17,15 +17,13 @@ let basePath = "/tmp/cdn"
 let db
 const seen = {}
 let branch
+let maxDepth = 0
 
 const patternImport = new RegExp(
   /import(?:["'\s]*([\w*${}\n\r\t, ]+)from\s*)?["'\s]["'\s](.*[@\w_-]+)["'\s].*$/,
   "mg"
 )
-const patternDImport = new RegExp(
-  /import\((?:["'\s]*([\w*{}\n\r\t, ]+)\s*)?["'\s](.*([@\w_-]+))["'\s].*\)$/,
-  "mg"
-)
+const patternDImport = new RegExp(/import\s*\(\s*(["'`])(.*[^\\])\1\s*\)/, "mg")
 const globalImport = new RegExp(/(cdn-import)\((.+)\)/, "mg")
 
 function loadDb() {
@@ -45,6 +43,7 @@ function saveDb() {
 }
 
 function maybeDeploy(file, callTree = []) {
+  maxDepth = Math.max(maxDepth, callTree.length + 1)
   if (callTree.includes(file)) {
     throw new Error(
       "Circular dependency detected, which this script has no support for! " +
@@ -272,7 +271,10 @@ async function start() {
       await cmd(`git worktree remove /tmp/cdn`, true)
     }
 
-    branch = await cmd(`git rev-parse --symbolic-full-name --abbrev-ref HEAD`, true)
+    branch = await cmd(
+      `git rev-parse --symbolic-full-name --abbrev-ref HEAD`,
+      true
+    )
 
     await cmd(`git fetch && git push`, true)
     await cmd(`git worktree add /tmp/cdn`, true)
@@ -284,6 +286,9 @@ async function start() {
       `git add ${configFile} ; git commit -m 'CDN' ; git push origin cdn:${branch}`
     )
     await cmd(`git worktree remove /tmp/cdn`, true)
+    console.log(
+      `\nDone. This script saved your users ${maxDepth} roundtrips to the server`
+    )
   } catch (e) {
     console.error(e)
   } finally {

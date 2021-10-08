@@ -20,6 +20,7 @@ const seen = {}
 let branch
 let maxDepth = 0
 let dryRun = false
+let verbose = false
 
 const patternImport = new RegExp(
   /import(?:["'\s]*([\w*${}\n\r\t, ]+)from\s*)?["'\s]["'\s](.*[@\w_-]+)["'\s].*$/,
@@ -29,10 +30,12 @@ const patternDImport = new RegExp(/import\s*\(\s*(["'`])(.*[^\\])\1\s*\)/, "mg")
 const globalImport = new RegExp(/(cdn-import)\((.+)\)/, "mg")
 
 function loadDb() {
-  console.log(`Loading config file: ${configFile}`)
+  if (verbose) {
+    console.log(`Loading config file: ${configFile}`)
+  }
 
   if (!existsSync(configFile)) {
-    console.log(`Config file not found: ${configFile}`)
+    console.error(`Config file not found: ${configFile}`)
     return
   }
 
@@ -245,7 +248,9 @@ async function unsafeCmd(str, nocwd = false) {
       }
       log(printstr)
 
-      console.log(`Running command: ${str}`)
+      if (verbose) {
+        console.log(`Running command: ${str}`)
+      }
       exec(str, opts, (error, stdout, stderr) => {
         if (error) {
           reject(printstr + ": " + stderr.trim())
@@ -261,7 +266,9 @@ async function unsafeCmd(str, nocwd = false) {
 
 async function cmd(str, nocwd = false) {
   if (dryRun) {
-    console.log(`Not running (dry run): ${str}`)
+    if (verbose) {
+      console.log(`Not running (dry run): ${str}`)
+    }
     return
   }
 
@@ -288,7 +295,8 @@ async function start(argv) {
     alias: {
       dryRun: ["d", "drurun"],
       config: ["c", "config"],
-      base: ["b", "base"]
+      base: ["b", "base"],
+      verbose: ["v", "verbose"],
     },
     default: {
       config: '/tmp/cdn/cdn.json',
@@ -297,13 +305,14 @@ async function start(argv) {
   })
 
   if (options.help) {
-    console.log(`Syntax: cdn-deploy {--dry-run} {--config=path-to-cdn.json} {--base=absolute-path-to-your-repo}`)
+    console.log(`Syntax: cdn-deploy {--dry-run} {--verbose} {--config=path-to-cdn.json} {--base=absolute-path-to-your-repo}`)
     return
   }
 
   dryRun = options.dryrun
   configFile = options.config
   basePath = options.base
+  verbose = options.verbose
 
   log("======= NEW DEPLOY: " + process.cwd(), argv)
   try {

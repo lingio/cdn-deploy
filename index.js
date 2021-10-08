@@ -10,14 +10,16 @@ import {
 import { exec } from "child_process"
 import tmp from "tmp"
 import mime from "mime-types"
+import getopts from "getopts"
 
 const logFile = "/tmp/cdn-deploy.log"
-const configFile = "/tmp/cdn/cdn.json"
-let basePath = "/tmp/cdn"
+let configFile
+let basePath
 let db
 const seen = {}
 let branch
 let maxDepth = 0
+let dryRun = false
 
 const patternImport = new RegExp(
   /import(?:["'\s]*([\w*${}\n\r\t, ]+)from\s*)?["'\s]["'\s](.*[@\w_-]+)["'\s].*$/,
@@ -27,6 +29,13 @@ const patternDImport = new RegExp(/import\s*\(\s*(["'`])(.*[^\\])\1\s*\)/, "mg")
 const globalImport = new RegExp(/(cdn-import)\((.+)\)/, "mg")
 
 function loadDb() {
+  console.log(`Loading config file: ${configFile}`)
+
+  if (!existsSync(configFile)) {
+    console.log(`Config file not found: ${configFile}`)
+    return
+  }
+
   const db = JSON.parse(readFileSync(configFile, "utf8"))
   if (!db.files) {
     db.files = {}
@@ -195,7 +204,7 @@ async function getDependencies(file) {
 }
 
 function getFileHash(file) {
-  return cmd(
+  return unsafeCmd(
     `git rev-parse --short=1 $(git rev-list -1 ${branch} -- "${file}")`
   )
 }
@@ -215,7 +224,7 @@ async function retrycmd(...args) {
 
 let workers = 0
 const queue = []
-async function cmd(str, nocwd = false) {
+async function unsafeCmd(str, nocwd = false) {
   await new Promise((res) => {
     queue.push(res)
   })
@@ -236,6 +245,7 @@ async function cmd(str, nocwd = false) {
       }
       log(printstr)
 
+      console.log(`Running command: ${str}`)
       exec(str, opts, (error, stdout, stderr) => {
         if (error) {
           reject(printstr + ": " + stderr.trim())
@@ -248,6 +258,16 @@ async function cmd(str, nocwd = false) {
     workers -= 1
   }
 }
+
+async function cmd(str, nocwd = false) {
+  if (dryRun) {
+    console.log(`Not running (dry run): ${str}`)
+    return
+  }
+
+  unsafeCmd(str, nocwd)
+}
+
 function checkQueue() {
   if (queue.length > 0 && workers < 40) {
     queue.shift()()
@@ -263,15 +283,36 @@ function log(str) {
   appendFileSync(logFile, str + "\n")
 }
 
-async function start() {
-  log("======= NEW DEPLOY: " + process.cwd())
+async function start(argv) {
+  const options = getopts(argv.slice(2), {
+    alias: {
+      dryRun: ["d", "drurun"],
+      config: ["c", "config"],
+      base: ["b", "base"]
+    },
+    default: {
+      config: '/tmp/cdn/cdn.json',
+      base: '/tmp/cdn'
+    }
+  })
+
+  if (options.help) {
+    console.log(`Syntax: cdn-deploy {--dry-run} {--config=path-to-cdn.json} {--base=absolute-path-to-your-repo}`)
+    return
+  }
+
+  dryRun = options.dryrun
+  configFile = options.config
+  basePath = options.base
+
+  log("======= NEW DEPLOY: " + process.cwd(), argv)
   try {
     setInterval(checkQueue, 5)
     if (existsSync(basePath)) {
       await cmd(`git worktree remove /tmp/cdn`, true)
     }
 
-    branch = await cmd(
+    branch = await unsafeCmd(
       `git rev-parse --symbolic-full-name --abbrev-ref HEAD`,
       true
     )
@@ -279,6 +320,7 @@ async function start() {
     await cmd(`git fetch && git push`, true)
     await cmd(`git worktree add /tmp/cdn`, true)
     await cmd(`git reset --hard origin/${branch}`)
+
     db = await loadDb()
     await maybeDeploy(absPath(`${basePath}/${db.entry}`))
     saveDb()
@@ -297,4 +339,4 @@ async function start() {
   }
 }
 
-start()
+start(process.argv)

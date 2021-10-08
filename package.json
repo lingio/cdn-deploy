@@ -13,6 +13,7 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "getopts": "^2.3.0",
     "mime-types": "^2.1.26",
     "tmp": "^0.1.0"
   }

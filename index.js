@@ -272,7 +272,7 @@ async function cmd(str, nocwd = false) {
     return
   }
 
-  unsafeCmd(str, nocwd)
+  return unsafeCmd(str, nocwd)
 }
 
 function checkQueue() {
